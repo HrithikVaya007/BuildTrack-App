@@ -1,27 +1,92 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AuthService {
-  final String baseUrl = 'https://yourapi.com/api';
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Future<Map<String, dynamic>> login(String email, String password) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/login'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email, 'password': password}),
-    );
+  // -----------------------------
+  // SIGN UP
+  // -----------------------------
+  Future<Map<String, dynamic>> register({
+    required String name,
+    required String email,
+    required String password,
+    required String role,
+  }) async {
+    try {
+      // Create user account
+      UserCredential credential =
+          await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
 
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Login failed');
+      String uid = credential.user!.uid;
+
+      // Save user data in Firestore
+      await _firestore.collection("users").doc(uid).set({
+        "uid": uid,
+        "name": name,
+        "email": email,
+        "role": role,       // 🔥 SAVE ROLE
+        "createdAt": DateTime.now(),
+      });
+
+      return {
+        "success": true,
+        "user": {
+          "uid": uid,
+          "name": name,
+          "email": email,
+          "role": role,
+        }
+      };
+    } catch (e) {
+      return {"success": false, "error": e.toString()};
     }
   }
 
-  Future<void> logout(String token) async {
-    await http.post(
-      Uri.parse('$baseUrl/logout'),
-      headers: {'Authorization': 'Bearer $token'},
-    );
+  // -----------------------------
+  // LOGIN
+  // -----------------------------
+  Future<Map<String, dynamic>> login(
+    String email,
+    String password,
+  ) async {
+    try {
+      // Login user
+      UserCredential credential =
+          await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      String uid = credential.user!.uid;
+
+      // Get user data
+      DocumentSnapshot userDoc =
+          await _firestore.collection("users").doc(uid).get();
+
+      if (!userDoc.exists) {
+        return {"success": false, "error": "User record not found"};
+      }
+
+      final data = userDoc.data() as Map<String, dynamic>;
+
+      return {
+        "success": true,
+        "user": data, // 🔥 includes role
+      };
+    } catch (e) {
+      return {"success": false, "error": e.toString()};
+    }
+  }
+
+  // -----------------------------
+  // LOGOUT
+  // -----------------------------
+  Future<void> logout() async {
+    await _auth.signOut();
   }
 }
